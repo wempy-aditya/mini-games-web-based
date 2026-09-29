@@ -1,0 +1,7 @@
+{
+  "title": "Snake",
+  "description": "Klasik arena. Makan makanan, hindari tubuh sendiri, makin cepat tiap level.",
+  "tags": ["arcade", "canvas", "keyboard"],
+  "status": "done",
+  "controls": "Arrow / WASD untuk arah, Spasi untuk jeda, R untuk restart"
+}

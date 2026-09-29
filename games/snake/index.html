@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snake</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <header>
+    <a class="back" href="/">&larr; semua game</a>
+    <h1>Snake</h1>
+  </header>
+
+  <section class="hud">
+    <div><span class="label">skor</span><span id="score">0</span></div>
+    <div><span class="label">terbaik</span><span id="best">0</span></div>
+    <div><span class="label">level</span><span id="level">1</span></div>
+  </section>
+
+  <div class="stage">
+    <canvas id="board" width="400" height="400" aria-label="Arena snake"></canvas>
+    <div id="overlay" class="overlay">
+      <p id="overlay-text">Tekan Spasi atau tap untuk mulai</p>
+    </div>
+  </div>
+
+  <section class="touch" aria-hidden="false">
+    <button data-dir="up" aria-label="Atas">&#9650;</button>
+    <div>
+      <button data-dir="left" aria-label="Kiri">&#9664;</button>
+      <button data-dir="down" aria-label="Bawah">&#9660;</button>
+      <button data-dir="right" aria-label="Kanan">&#9654;</button>
+    </div>
+  </section>
+
+  <p class="hint">Arrow / WASD &middot; Spasi jeda &middot; R restart</p>
+</main>
+<script src="game.js"></script>
+</body>
+</html>

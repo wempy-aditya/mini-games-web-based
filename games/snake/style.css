@@ -1,0 +1,96 @@
+:root {
+  --bg: #0e1014;
+  --card: #171a21;
+  --line: #262b35;
+  --text: #e7eaf0;
+  --muted: #8b93a3;
+  --accent: #7dd3a0;
+  --snake: #7dd3a0;
+  --food: #e8785d;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+main { width: 100%; max-width: 440px; }
+
+header { margin-bottom: 14px; }
+.back { color: var(--muted); text-decoration: none; font-size: 14px; }
+.back:hover { color: var(--text); }
+h1 { margin: 6px 0 0; font-size: 26px; letter-spacing: -0.02em; }
+
+.hud {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.hud > div {
+  flex: 1;
+  padding: 8px 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+}
+.label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
+.hud span:last-child { font-size: 20px; font-variant-numeric: tabular-nums; }
+
+.stage {
+  position: relative;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px;
+}
+canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  border-radius: 6px;
+  background: #10131a;
+  touch-action: none;
+}
+
+.overlay {
+  position: absolute;
+  inset: 8px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: rgba(14, 16, 20, 0.82);
+  text-align: center;
+  padding: 20px;
+  cursor: pointer;
+}
+.overlay[hidden] { display: none; }
+.overlay p { margin: 0; color: var(--muted); }
+
+.touch { margin-top: 14px; display: none; }
+.touch > div { display: flex; justify-content: center; gap: 10px; margin-top: 10px; }
+.touch button {
+  width: 62px;
+  height: 56px;
+  font-size: 18px;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.touch button:active { background: var(--card-hover, #1e222b); }
+@media (pointer: coarse) { .touch { display: block; } }
+
+.hint { margin: 14px 0 0; color: var(--muted); font-size: 13px; text-align: center; }

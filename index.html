@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mini Games</title>
+<style>
+  :root {
+    --bg: #0e1014;
+    --card: #171a21;
+    --card-hover: #1e222b;
+    --line: #262b35;
+    --text: #e7eaf0;
+    --muted: #8b93a3;
+    --accent: #7dd3a0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 48px 20px 64px;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 32px; margin: 0 0 6px; letter-spacing: -0.02em; }
+  .sub { color: var(--muted); margin: 0 0 36px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 14px;
+  }
+  .card {
+    display: block;
+    padding: 18px 18px 16px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    color: inherit;
+    text-decoration: none;
+    transition: background 0.12s, border-color 0.12s, transform 0.12s;
+  }
+  .card:hover {
+    background: var(--card-hover);
+    border-color: #3a4150;
+    transform: translateY(-2px);
+  }
+  .card h2 { font-size: 18px; margin: 0 0 6px; }
+  .card p { margin: 0; color: var(--muted); font-size: 14px; min-height: 2.8em; }
+  .meta {
+    margin-top: 12px;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    font-size: 12px;
+  }
+  .tag {
+    padding: 2px 8px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--muted);
+  }
+  .tag.done { color: var(--accent); border-color: #2f4a3b; }
+  .empty { color: var(--muted); padding: 32px 0; }
+  footer { margin-top: 48px; color: #5a6270; font-size: 13px; }
+  code {
+    background: #1c2028;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Mini Games</h1>
+  <p class="sub">Kumpulan game kecil. Satu klik langsung main, tanpa install.</p>
+  <div class="grid" id="grid"><p class="empty">Memuat…</p></div>
+  <footer>
+    Jalankan lokal: <code>python3 serve.py</code> → <code>http://127.0.0.1:8000</code><br>
+    Tambah game baru: buat folder <code>games/&lt;nama&gt;/</code> berisi <code>index.html</code> + opsional <code>meta.json</code>.
+  </footer>
+</div>
+<script>
+const grid = document.getElementById('grid');
+
+fetch('/api/games')
+  .then((r) => r.json())
+  .then((games) => {
+    if (!games.length) {
+      grid.innerHTML = '<p class="empty">Belum ada game. Tambahkan folder di <code>games/</code>.</p>';
+      return;
+    }
+    grid.innerHTML = games
+      .map((g) => {
+        const status = g.status === 'done'
+          ? '<span class="tag done">selesai</span>'
+          : '<span class="tag">wip</span>';
+        const tags = (g.tags || []).map((t) => `<span class="tag">${t}</span>`).join('');
+        return `<a class="card" href="${g.url}">
+          <h2>${g.title}</h2>
+          <p>${g.description}</p>
+          <div class="meta">${status}${tags}</div>
+        </a>`;
+      })
+      .join('');
+  })
+  .catch((err) => {
+    grid.innerHTML = `<p class="empty">Gagal memuat katalog: ${err.message}</p>`;
+  });
+</script>
+</body>
+</html>
