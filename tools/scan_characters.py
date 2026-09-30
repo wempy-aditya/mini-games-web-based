@@ -18,6 +18,8 @@ import unicodedata
 ALLOWED = set(
     "─│┌┐└┘├┤┬┴┼═║╔╗╚╝━┃┏┓┗┛•·°×÷±≤≥≠→←↑↓↔⇒⇔≈"
     "–—‘’“”…€™®©"
+    # Deliberate UI glyphs: upgrade icons in neon-breach.
+    "⟳⬢◈◆★☆❤⚡"
 )
 ALLOWED_RANGES = (
     (0x00A0, 0x00FF),   # Latin-1 supplement
