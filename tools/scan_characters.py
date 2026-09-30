@@ -31,6 +31,8 @@ ALLOWED_RANGES = (
     (0x2600, 0x27BF),   # misc symbols + dingbats
     (0x1F300, 0x1FAFF), # emoji, used deliberately in note headings
     (0xFE00, 0xFE0F),   # variation selectors, appended to emoji
+    (0x23E9, 0x23FA),   # media control glyphs
+    (0x1F100, 0x1F1FF), # enclosed alphanumerics
 )
 EXTS = (".js", ".mjs", ".html", ".css", ".json", ".py", ".md", ".txt")
 # Vendored third-party code is upstream's business, not ours. Scanning it would
