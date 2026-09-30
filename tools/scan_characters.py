@@ -38,6 +38,9 @@ EXTS = (".js", ".mjs", ".html", ".css", ".json", ".py", ".md", ".txt")
 # Vendored third-party code is upstream's business, not ours. Scanning it would
 # only ever report maths symbols in their own comments.
 SKIP_DIRS = {"vendor", "node_modules", ".git"}
+# Lines containing this token are skipped, so a note can quote the exact bad
+# characters it is warning about without tripping its own linter.
+IGNORE_MARKER = "scan: ignore"
 
 
 def suspicious(ch):
@@ -68,6 +71,10 @@ def main(roots):
                 continue
 
             for lineno, line in enumerate(text.split("\n"), 1):
+                # A line can opt out when it deliberately quotes bad characters,
+                # e.g. the vault note that documents this very failure mode.
+                if IGNORE_MARKER in line:
+                    continue
                 bad = sorted({c for c in line if suspicious(c)})
                 if not bad:
                     continue
