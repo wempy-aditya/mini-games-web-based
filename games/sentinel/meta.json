@@ -1,0 +1,28 @@
+{
+  "slug": "sentinel",
+  "title": "Sentinel",
+  "tagline": "Tower defence 2D. Susun pertahanan, tambah gelombangnya, biarkan model keputusan mengatur tekanan.",
+  "description": "Game pertahanan menara 2D dengan lima tipe menara, tujuh jalur peningkatan, tiga peta, gelombang tanpa batas, dan advisor opsional berbasis model keputusan (Jev System One atau endpoint OpenAI-compatible) untuk menyusun gelombang berikutnya. API key, URL, dan nama model diisi sendiri lewat modal pengaturan.",
+  "tags": ["2d", "tower-defence", "strategy", "canvas", "llm", "upgrade", "endless"],
+  "entry": "index.html",
+  "orientation": "landscape",
+  "controls": {
+    "primary": "Klik menara di palet, lalu klik petak kosong untuk membangun. Klik menara yang sudah ada untuk meningkatkan atau menjualnya.",
+    "keys": [
+      "Space - jeda / lanjut",
+      "1-5 - pilih menara",
+      "N - gelombang berikutnya",
+      "Esc - batal / tutup"
+    ]
+  },
+  "features": [
+    "Lima tipe menara: Panah, Meriam, Beku, Tesla, Penembak",
+    "Tujuh jalur peningkatan per menara, empat tingkat tiap jalur",
+    "Tiga peta dengan jalur berbeda",
+    "Gelombang tanpa batas dengan skala HP yang meningkat",
+    "Jual menara dengan pengembalian 70 persen",
+    "Simpan otomatis dan lanjutkan Latter",
+    "Advisor model opsional: API key, URL, dan nama model diisi sendiri",
+    "Jatuh tempo offline total: tanpa model permainan tetap utuh"
+  ]
+}

@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sentinel — Tower Defence</title>
+<meta name="description" content="Game tower defence 2D. Susun pertahanan, tambahauen gelombang, dan pakai model keputusan untuk mengatur kesulitan.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ── top bar ─────────────────────────────────────────────────────── -->
+  <header id="bar">
+    <h1 class="logo">SENTINEL</h1>
+
+    <div class="stats">
+      <div class="stat"><span class="lbl">GELAR</span><b id="gold">0</b></div>
+      <div class="stat"><span class="lbl">NYAWA</span><b id="lives">0</b></div>
+      <div class="stat"><span class="lbl">GELOMBANG</span><b id="wave">0</b></div>
+      <div class="stat"><span class="lbl">JATUH</span><b id="kills">0</b></div>
+    </div>
+
+    <div class="tools">
+      <div class="speeds" role="group" aria-label="Kecepatan">
+        <button data-speed="1" class="on" title="Kecepatan 1x">1x</button>
+        <button data-speed="2" title="Kecepatan 2x">2x</button>
+        <button data-speed="3" title="Kecepatan 3x">3x</button>
+      </div>
+      <button id="btnPause" class="icon" title="Jeda (Spasi)">II</button>
+      <button id="btnSound" class="icon" title="Suara">♪</button>
+      <button id="btnAi" class="icon wide" title="Pengaturan model AI">AI</button>
+      <button id="btnHelp" class="icon" title="Bantuan">?</button>
+      <button id="btnMenu" class="icon" title="Menu">≡</button>
+    </div>
+  </header>
+
+  <!-- ── main ────────────────────────────────────────────────────────── -->
+  <main id="main">
+    <section id="boardWrap">
+      <canvas id="board" width="560" height="280" aria-label="Papan pertahanan"></canvas>
+      <div id="waveBanner" hidden></div>
+      <div id="advisorNote" hidden></div>
+    </section>
+
+    <aside id="side">
+      <!-- build palette -->
+      <div class="panel">
+        <h2>BANGUN</h2>
+        <div id="palette" class="palette"></div>
+        <p class="hint">Klik menara lalu klik petak kosong. Klik menara yang sudah ada untuk meningkatkan.</p>
+      </div>
+
+      <!-- tower inspector -->
+      <div class="panel" id="inspector" hidden>
+        <h2>TINGKATKAN</h2>
+        <div id="inspectBody"></div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- ── bottom bar ──────────────────────────────────────────────────── -->
+  <footer id="foot">
+    <button id="btnNext" class="primary">GELOMBANG BERIKUTNYA</button>
+    <div id="status" class="status">Siap. Susun pertahanan lalu mulai gelombang.</div>
+  </footer>
+</div>
+
+<!-- ── AI / model settings modal ─────────────────────────────────────── -->
+<div id="aiModal" class="modal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="aiTitle">
+    <header class="modal-head">
+      <h2 id="aiTitle">PENGATURAN MODEL</h2>
+      <button id="aiClose" class="icon" aria-label="Tutup">×</button>
+    </header>
+
+    <div class="modal-body">
+      <p class="lede">
+        Sentinel bisa memakai model keputusan untuk menyusun gelombang.
+        Semua isian disimpan lokal di peramban ini dan hanya dikirim ke URL yang
+        kamu ketik. Game tanpa model tetap bisa dimainkan penuh.
+      </p>
+
+      <div class="row">
+        <label for="aiDialect">Tipe API</label>
+        <select id="aiDialect">
+          <option value="systemone">System One (Jev / TypeSafe)</option>
+          <option value="openai">OpenAI-compatible /chat/completions</option>
+        </select>
+      </div>
+      <p class="note" id="dialectNote"></p>
+
+      <div class="row">
+        <label for="aiEnabled">Gunakan model</label>
+        <input type="checkbox" id="aiEnabled">
+      </div>
+
+      <div class="row">
+        <label for="aiBase">API URL</label>
+        <input type="text" id="aiBase" placeholder="https://api.typesafe.ai" autocomplete="off" spellcheck="false">
+      </div>
+      <p class="note">Akhiri tanpa garis miring. Jalur <code>/v1</code> akan dibuang otomatis.</p>
+
+      <div class="row">
+        <label for="aiModel">Nama model</label>
+        <input type="text" id="aiModel" placeholder="jev-latest" autocomplete="off" spellcheck="false">
+      </div>
+
+      <div class="row">
+        <label for="aiKey">API key</label>
+        <div class="keywrap">
+          <input type="password" id="aiKey" placeholder="sk-..." autocomplete="off" spellcheck="false">
+          <button id="aiReveal" class="mini" type="button">Lihat</button>
+        </div>
+      </div>
+      <p class="note">Disimpan di localStorage peramban ini. Tidak pernah dicetak ke log atau dikirim ke alamat lain.</p>
+
+      <div class="row" id="tempRow" hidden>
+        <label for="aiTemp">Temperature</label>
+        <input type="number" id="aiTemp" min="0" max="2" step="0.1" value="0.7">
+      </div>
+
+      <div class="row">
+        <label for="aiTimeout">Batas waktu (ms)</label>
+        <input type="number" id="aiTimeout" min="2000" max="120000" step="500" value="15000">
+      </div>
+
+      <div class="testrow">
+        <button id="aiTest" class="ghost">Uji koneksi</button>
+        <span id="aiTestOut" class="testout"></span>
+      </div>
+    </div>
+
+    <footer class="modal-foot">
+      <button id="aiClear" class="danger">Hapus tersimpan</button>
+      <span class="spacer"></span>
+      <button id="aiCancel" class="ghost">Batal</button>
+      <button id="aiSave" class="primary">Simpan</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ── help modal ───────────────────────────────────────────────────── -->
+<div id="helpModal" class="modal" hidden>
+  <div class="modal-card narrow" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+    <header class="modal-head">
+      <h2 id="helpTitle">CARA MAIN</h2>
+      <button id="helpClose" class="icon" aria-label="Tutup">×</button>
+    </header>
+    <div class="modal-body prose">
+      <h3>Tujuan</h3>
+      <p>Musuh berjalan mengikuti jalan menuju inti. KamuunhaSAS placing menara untuk menghentikannya. Kalau 20 musuh lolos, permainan berakhir.</p>
+
+      <h3>Menara</h3>
+      <ul>
+        <li><b>Panah</b> — murah dan cepat, satu target.</li>
+        <li><b>Meriam</b> — ledakan area, berat di dekat menara.</li>
+        <li><b>Beku</b> — memperlambat, jarang membunuh.</li>
+        <li><b>Tesla</b> — rantai lightning ke beberapa target.</li>
+        <li><b>Penembak</b> — jarak jauh, menembus garis.</li>
+      </ul>
+
+      <h3>Meningkatkan</h3>
+      <p>Klik menara yang sudah ada untuk membuka panel peningkatan. Setiap menara punya jalur peningkatan sendiri, dan menjual menara mengembalikan 70% total biaya.</p>
+
+      <h3>Model AI</h3>
+      <p>Kalau model aktif, dia menyusun gelombang berikutnya: seberapa sulit dan tipe musuh apa yang domina. Kalau model gagal, mati, atau tidak dikonfigurasi, permainan memakai rencana lokal dan tetap berjalan.</p>
+
+      <h3>Keyboard</h3>
+      <ul>
+        <li><kbd>Spasi</kbd> — jeda / lanjut</li>
+        <li><kbd>1</kbd>–<kbd>5</kbd> — pilih menara</li>
+        <li><kbd>Esc</kbd> — batal / tutup</li>
+        <li><kbd>N</kbd> — gelombang berikutnya</li>
+      </ul>
+    </div>
+    <footer class="modal-foot">
+      <span class="spacer"></span>
+      <button id="helpOk" class="primary">Mengerti</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ── menu modal ───────────────────────────────────────────────────── -->
+<div id="menuModal" class="modal" hidden>
+  <div class="modal-card narrow" role="dialog" aria-modal="true" aria-labelledby="menuTitle">
+    <header class="modal-head">
+      <h2 id="menuTitle">MENU</h2>
+      <button id="menuClose" class="icon" aria-label="Tutup">×</button>
+    </header>
+    <div class="modal-body">
+      <label class="rowblock">
+        <span>Peta</span>
+        <select id="mapPick"></select>
+      </label>
+      <div id="menuStats" class="menustats"></div>
+    </div>
+    <footer class="modal-foot">
+      <button id="btnRestart" class="danger">Mulai ulang</button>
+      <span class="spacer"></span>
+      <button id="menuOk" class="primary">Lanjut</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ── end-of-run modal ─────────────────────────────────────────────── -->
+<div id="overModal" class="modal" hidden>
+  <div class="modal-card narrow" role="dialog" aria-modal="true" aria-labelledby="overTitle">
+    <header class="modal-head">
+      <h2 id="overTitle">PERMAINAN SELESAI</h2>
+    </header>
+    <div class="modal-body">
+      <div id="overStats" class="overstats"></div>
+    </div>
+    <footer class="modal-foot">
+      <span class="spacer"></span>
+      <button id="overAgain" class="primary">Main lagi</button>
+    </footer>
+  </div>
+</div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
