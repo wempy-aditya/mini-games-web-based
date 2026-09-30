@@ -1,0 +1,14 @@
+{
+  "title": "Azulejo",
+  "tagline": "Board game ubin 5x5: tandai dinding, pasang ubin, lengkapi garis.",
+  "slug": "azulejo",
+  "tags": ["2d", "board-game", "strategy", "canvas", "ai", "turn-based"],
+  "status": "done",
+  "difficulty": "medium",
+  "orientation": "any",
+  "engine": "canvas-2d",
+  "deps": [],
+  "entry": "index.html",
+  "created": "2026-09-30",
+  "updated": "2026-09-30"
+}

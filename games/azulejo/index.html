@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Azulejo — Board Game Tile</title>
+<meta name="description" content="Board game drafting tile 5x5. Tandai dinding, pasang ubin, lengkapi garis. Lawan AI 3 tingkat.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ── top bar ── -->
+  <header id="topbar">
+    <div class="brand">
+      <span class="mark" aria-hidden="true"></span>
+      <h1>AZULEJO</h1>
+    </div>
+    <div class="scores">
+      <div class="score" id="scoreYou">
+        <span class="who">KAMU</span>
+        <span class="val" id="scoreYouVal">0</span>
+      </div>
+      <div class="vs">:</div>
+      <div class="score" id="scoreFoe">
+        <span class="who" id="foeName">LAIN</span>
+        <span class="val" id="scoreFoeVal">0</span>
+      </div>
+    </div>
+    <div class="tools">
+      <button class="icon" id="btnUndo" title="Undo (Z)" aria-label="Undo">↶</button>
+      <button class="icon" id="btnSound" title="Suara" aria-label="Suara">♪</button>
+      <button class="icon" id="btnHelp" title="Bantuan (?)" aria-label="Bantuan">?</button>
+      <button class="icon" id="btnMenu" title="Menu" aria-label="Menu">≡</button>
+    </div>
+  </header>
+
+  <!-- ── board ── -->
+  <main id="stage">
+    <canvas id="board" aria-label="Papan 5x5"></canvas>
+    <div id="thinking" class="thinking" hidden>
+      <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+      <em>lawan berpikir…</em>
+    </div>
+  </main>
+
+  <!-- ── hand tray ── -->
+  <section id="tray" aria-label="Ubin di tangan">
+    <div class="tray-head">
+      <div class="phase" id="phaseLabel">PILIH UBIN</div>
+      <div class="wall-tools" id="wallTools">
+        <span class="wall-label">TANDAI DINDING:</span>
+        <div class="swatches" id="wallSwatches" role="group" aria-label="Warna dinding"></div>
+        <button class="mini" id="btnCancelWall" hidden>BATAL</button>
+      </div>
+    </div>
+    <div class="hand" id="hand"></div>
+    <div class="hints" id="hints"></div>
+  </section>
+
+</div>
+
+<!-- ── overlays ── -->
+<div class="screen" id="screenTitle">
+  <div class="panel wide">
+    <div class="crest" aria-hidden="true"></div>
+    <h2>AZULEJO</h2>
+    <p class="tagline">Board game ubin 5&times;5. Tandai dinding, pasang ubin, lengkapi garis.</p>
+
+    <div class="setup">
+      <div class="field">
+        <label>LAIN</label>
+        <div class="seg" id="segMode" role="radiogroup">
+          <button data-mode="human-ai" class="on" role="radio" aria-checked="true">LAWAN AI</button>
+          <button data-mode="ai-ai" role="radio" aria-checked="false">AI vs AI</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>KESULITAN</label>
+        <div class="seg" id="segDiff" role="radiogroup">
+          <button data-diff="easy" role="radio" aria-checked="false">MUDAH</button>
+          <button data-diff="normal" class="on" role="radio" aria-checked="true">NORMAL</button>
+          <button data-diff="hard" role="radio" aria-checked="false">SULIT</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="best" id="bestLine"></div>
+
+    <div class="row">
+      <button class="primary" id="btnStart">MULAI</button>
+      <button class="ghost" id="btnContinue" hidden>LANJUTKAN</button>
+      <button class="ghost" id="btnHow">CARA MAIN</button>
+    </div>
+  </div>
+</div>
+
+<div class="screen" id="screenHelp">
+  <div class="panel">
+    <h2>CARA MAIN</h2>
+    <div class="help-body">
+      <p>Papan 5&times;5. Setiap giliran kamu melakukan dua hal:</p>
+      <ol>
+        <li><b>Tandai dinding</b> (opsional) — klik satu sel kosong, lalu pilih warna. Dinding yang ditandai <b>hanya bisa diisi ubin dengan warna yang sama</b> di sisi yang bersentuhan.</li>
+        <li><b>Pasang satu ubin</b> dari tanganmu ke sel yang legal. Putar ubin dengan klik kanan atau tekan <kbd>R</kbd>.</li>
+      </ol>
+      <h3>Menang</h3>
+      <p>Bergantian sampai papan penuh atau tidak ada yang bisa main lagi. Skor akhir = garis dinding 5 se warna + sisa ubin di tangan + dinding yang belum jadi garis.</p>
+      <div class="walltable" id="wallTable"></div>
+      <h3>Kontrol</h3>
+      <ul class="keys">
+        <li><kbd>klik</kbd> pilih sel</li>
+        <li><kbd>klik kanan</kbd> / <kbd>R</kbd> putar ubin</li>
+        <li><kbd>1</kbd>–<kbd>4</kbd> pilih ubin di tangan</li>
+        <li><kbd>1</kbd>–<kbd>5</kbd> (fase dinding) pilih warna</li>
+        <li><kbd>Z</kbd> undo · <kbd>U</kbd> tarik ubin baru</li>
+        <li><kbd>Esc</kbd> menu</li>
+      </ul>
+    </div>
+    <div class="row"><button class="primary" id="btnHelpClose">TUTUP</button></div>
+  </div>
+</div>
+
+<div class="screen" id="screenOver">
+  <div class="panel">
+    <h2 id="overTitle">SELESAI</h2>
+    <p class="overSub" id="overSub"></p>
+    <div class="final" id="finalScores"></div>
+    <div class="breakdown" id="overBreakdown"></div>
+    <div class="row">
+      <button class="primary" id="btnAgain">MAIN LAGI</button>
+      <button class="ghost" id="btnReview">TINJAU</button>
+      <button class="ghost" id="btnToMenu">MENU</button>
+    </div>
+  </div>
+</div>
+
+<div class="screen" id="screenMenu">
+  <div class="panel">
+    <h2>MENU</h2>
+    <div class="menu-list">
+      <button id="btnResume" class="primary">LANJUTKAN</button>
+      <button id="btnNewGame">GAME BARU</button>
+      <button id="btnMenuHelp">CARA MAIN</button>
+      <button id="btnMenuSound">SUARA: ON</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
