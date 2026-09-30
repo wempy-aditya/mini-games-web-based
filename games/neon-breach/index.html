@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>NEON BREACH</title>
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three.module.js",
+    "three/addons/": "./vendor/addons/"
+  }
+}
+</script>
+</head>
+<body>
+
+<canvas id="scene"></canvas>
+
+<!-- ══════════ HUD ══════════ -->
+<div id="hud" class="hud" hidden>
+  <div class="crosshair" id="crosshair">
+    <i class="ch-dot"></i>
+    <i class="ch-arm ch-t"></i><i class="ch-arm ch-r"></i>
+    <i class="ch-arm ch-b"></i><i class="ch-arm ch-l"></i>
+    <i class="hitmarker" id="hitmarker"></i>
+  </div>
+
+  <div class="vignette" id="vignette"></div>
+  <div class="heal-flash" id="healFlash"></div>
+  <div class="scanlines"></div>
+
+  <!-- top center: wave -->
+  <div class="wave-strip">
+    <div class="wave-label">wave</div>
+    <div class="wave-num" id="waveNum">1</div>
+    <div class="wave-bar"><i id="waveBar"></i></div>
+    <div class="wave-left" id="waveLeft"></div>
+  </div>
+
+  <!-- top right: score + combo -->
+  <div class="score-box">
+    <div class="score-val" id="scoreVal">0</div>
+    <div class="score-sub">
+      <span class="combo" id="comboBox" hidden>x<span id="comboVal">1</span></span>
+      <span class="best">best <b id="bestVal">0</b></span>
+    </div>
+  </div>
+
+  <!-- bottom left: vitals -->
+  <div class="vitals">
+    <div class="hp-wrap">
+      <div class="hp-bar"><i id="hpFill"></i><i id="hpGhost"></i></div>
+      <div class="hp-num"><b id="hpNum">100</b><span id="hpMax">/100</span></div>
+    </div>
+    <div class="dash-pip" id="dashPip" title="dash (Shift)"><i></i><span>dash</span></div>
+  </div>
+
+  <!-- bottom right: weapon -->
+  <div class="weapon-box" id="weaponBox">
+    <div class="wpn-name" id="wpnName">PULSE RIFLE</div>
+    <div class="ammo"><b id="ammoMag">30</b><span>/</span><i id="ammoRes">120</i></div>
+    <div class="reload-bar" id="reloadBar" hidden><i id="reloadFill"></i></div>
+    <div class="wpn-mod" id="wpnMod"></div>
+  </div>
+
+  <!-- boss bar -->
+  <div class="boss-bar" id="bossBar" hidden>
+    <div class="boss-name" id="bossName">SENTINEL</div>
+    <div class="boss-track"><i id="bossFill"></i></div>
+  </div>
+
+  <!-- kill feed -->
+  <div class="killfeed" id="killfeed"></div>
+
+  <!-- low ammo warning -->
+  <div class="low-ammo" id="lowAmmo">reloading</div>
+</div>
+
+<!-- ══════════ SCREENS ══════════ -->
+
+<!-- title -->
+<section class="screen screen--title" id="screenTitle">
+  <div class="title-inner">
+    <h1 class="logo">NEON<span>BREACH</span></h1>
+    <p class="tagline">hold the grid. survive the wave. breach the core.</p>
+
+    <div class="btn-row">
+      <button class="btn btn--primary" id="btnPlay">Mulai</button>
+      <button class="btn" id="btnControls">Kontrol</button>
+    </div>
+
+    <div class="title-meta">
+      <div><span>terbaik</span><b id="titleBest">0</b></div>
+      <div><span>wave</span><b id="titleWave">—</b></div>
+      <div><span>kill</span><b id="titleKills">—</b></div>
+    </div>
+  </div>
+  <div class="scanlines"></div>
+</section>
+
+<!-- controls -->
+<section class="screen screen--panel" id="screenControls" hidden>
+  <div class="panel">
+    <h2>Kontrol</h2>
+    <div class="ctrl-grid">
+      <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>jalan</span></div>
+      <div><kbd>Mouse</kbd><span>menoleh</span></div>
+      <div><kbd>← ↑ → ↓</kbd><span>menoleh (fallback)</span></div>
+      <div><kbd class="k">LMB</kbd><span>tembak</span></div>
+      <div><kbd>R</kbd><span>reload</span></div>
+      <div><kbd>Shift</kbd><span>dash</span></div>
+      <div><kbd>Space</kbd><span>confirm / menu</span></div>
+      <div><kbd>1</kbd>–<kbd>3</kbd><span>pilih kartu upgrade</span></div>
+      <div><kbd>Esc</kbd><span>jeda</span></div>
+    </div>
+    <p class="note">Mouse dikunci saat main. Kalau tidak bisa, pakai tombol panah untuk menoleh.</p>
+    <button class="btn btn--primary" id="btnControlsBack">Kembali</button>
+  </div>
+</section>
+
+<!-- wave intermission -->
+<section class="screen screen--clear" id="screenClear" hidden>
+  <div class="panel panel--wide">
+    <div class="clear-head">
+      <div class="clear-wave">wave <b id="clearWave">1</b> clear</div>
+      <div class="clear-stats">
+        <span>kill <b id="clearKills">0</b></span>
+        <span>skor <b id="clearScore">0</b></span>
+        <span>akurasi <b id="clearAcc">0%</b></span>
+      </div>
+    </div>
+    <h2 class="pick-title">pilih satu upgrade</h2>
+    <div class="cards" id="cards"></div>
+    <div class="countdown" id="countdown" hidden> Inheritance <b id="countdownNum">10</b>s — enter untuk lanjut</div>
+  </div>
+</section>
+
+<!-- pause -->
+<section class="screen screen--panel" id="screenPause" hidden>
+  <div class="panel">
+    <h2>Jeda</h2>
+    <div class="pause-stats" id="pauseStats"></div>
+    <div class="btn-row">
+      <button class="btn btn--primary" id="btnResume">Lanjut</button>
+      <button class="btn" id="btnQuit">Keluar</button>
+    </div>
+  </div>
+</section>
+
+<!-- game over -->
+<section class="screen screen--over" id="screenOver" hidden>
+  <div class="panel panel--wide">
+    <h2 class="over-title">SYSTEM BREACH</h2>
+    <p class="over-sub" id="overSub">core collapsed on wave 1</p>
+    <div class="over-stats" id="overStats"></div>
+    <div class="run-mods" id="runMods"></div>
+    <div class="btn-row">
+      <button class="btn btn--primary" id="btnRetry">Coba lagi</button>
+      <button class="btn" id="btnMenu">Menu utama</button>
+    </div>
+  </div>
+</section>
+
+<div class="loading" id="loading">
+  <div class="loading-inner">
+    <div class="loading-bar"><i></i></div>
+    <div class="loading-text" id="loadingText">initialising grid…</div>
+  </div>
+</div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

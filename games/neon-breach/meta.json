@@ -1,0 +1,7 @@
+{
+  "title": "Neon Breach",
+  "description": "Arena shooter 3D. Tahan wave, pilih upgrade tiap 5 level, boss tiap 5 wave. three.js + bloom.",
+  "tags": ["3d", "fps", "three.js", "roguelite", "wave"],
+  "status": "done",
+  "controls": "WASD jalan, Mouse/panah menoleh, LMB tembak, R reload, Shift dash, 1-2-3 pilih upgrade, Esc jeda"
+}
