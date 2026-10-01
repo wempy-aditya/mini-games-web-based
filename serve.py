@@ -20,6 +20,7 @@ import urllib.request
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent
 GAMES_DIR = ROOT / "games"
@@ -131,25 +132,62 @@ class GameCatalogHandler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store, must-revalidate")
         super().end_headers()
 
+    def _forwarded_host(self) -> str:
+        """Hostname the browser used, when a tunnel put it in a header.
+
+        A reverse proxy rewrites Host to the address it dialled, so the name the
+        browser actually asked for survives only in X-Forwarded-Host. The first
+        entry is the original client-facing host; later ones are proxies.
+        """
+        forwarded = self.headers.get("X-Forwarded-Host") or ""
+        for candidate in forwarded.split(","):
+            name = urlsplit(f"//{candidate.strip()}").hostname
+            if name:
+                return name.lower()
+        return ""
+
+    def _socket_host(self) -> str:
+        """Hostname the request was actually addressed to."""
+        host = self.headers.get("Host") or ""
+        name = urlsplit(f"//{host.strip()}").hostname if host else ""
+        if name:
+            return name.lower()
+        # server_address is typed as a union because some socket families
+        # return a string here; the tuple form is the one this server uses.
+        addr = self.server.server_address
+        text = f"{addr[0]}:{addr[1]}" if isinstance(addr, tuple) else str(addr)
+        return (urlsplit(f"//{text}").hostname or text).lower()
+
     def _local_origin(self) -> str:
-        host = self.headers.get("Host")
-        if not host:
-            # server_address is typed as a union because some socket families
-            # return a string here; the tuple form is the one this server uses.
-            addr = self.server.server_address
-            host = f"{addr[0]}:{addr[1]}" if isinstance(addr, tuple) else str(addr)
-        return f"http://{host}"
+        return f"http://{self._socket_host()}"
 
     def _origin_allowed(self) -> bool:
         """Reject cross-site callers so this cannot be used as an open relay.
 
         A request with no Origin header is not from a browser page (curl, the
-        test harness), and is allowed. A browser request must come from this
-        server's own origin, which is what keeps a page on another site from
-        borrowing the proxy.
+        test harness), and is allowed. A browser request must name a host that
+        is this server's own, which is what keeps a page on an unrelated site
+        from borrowing the relay to spend the caller's API key.
+
+        Hostnames are compared without the port and without the scheme. The page
+        is routinely reached as https on a tunnel name while this process only
+        ever speaks http on 8123, so a strict origin equality test would refuse
+        the server's own page. A different site still has to name a different
+        hostname, and that is what is being prevented.
         """
         origin = self.headers.get("Origin")
-        return origin is None or origin == self._local_origin()
+        if origin is None:
+            return True
+        try:
+            origin_name = urlsplit(origin).hostname
+        except ValueError:
+            return False
+        if not origin_name:
+            return False
+        origin_name = origin_name.lower()
+
+        allowed = {self._socket_host(), self._forwarded_host()} - {""}
+        return origin_name in allowed
 
     def do_OPTIONS(self) -> None:  # noqa: N802
         # Same-origin callers never trigger a preflight, but answering one
@@ -196,7 +234,13 @@ class GameCatalogHandler(SimpleHTTPRequestHandler):
         preflight at all, and this process adds the header.
         """
         if not self._origin_allowed():
-            self._json(403, {"ok": False, "error": "cross-origin request refused"})
+            # Naming both sides turns a confusing refusal into a one-line fix.
+            self._json(403, {
+                "ok": False,
+                "error": "cross-origin request refused",
+                "origin": self.headers.get("Origin"),
+                "accepted_hosts": sorted({self._socket_host(), self._forwarded_host()} - {""}),
+            })
             return
 
         try:
