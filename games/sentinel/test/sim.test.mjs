@@ -13,7 +13,8 @@ import { Sim, START_GOLD, MAX_TOWERS } from '../src/sim.js';
 import { buildPath, pointAt, isBuildable, cellCenter, toCell, inGrid, segmentPointDistance } from '../src/geometry.js';
 import { TOWERS, ENEMIES, UPGRADES, waveFor, waveScaling, PATHS, PATH_KEYS } from '../src/data.js';
 import { makeRng } from '../src/util.js';
-import { planFromAnswer, summarizeState, localPlan } from '../src/advisor.js';
+import { planFromAnswer, summarizeState, localPlan, readConfidence, CONFIDENCE_FLOOR, MARGIN_FLOOR, isUnreliable } from '../src/advisor.js';
+import * as advisorExports from '../src/advisor.js';
 import {
   loadConfig, saveConfig, clearConfig, isConfigured, normalizeBase,
   buildSystemOneRequest, buildChatRequest, extractJson, extractChatText,
@@ -917,6 +918,138 @@ section('advisor');
   check('local plan has groups', local.groups.length > 0);
   check('local plan uses real enemies', local.groups.every((g) => ENEMIES[g.type]));
   eq('local plan targets the wave', local.wave, 4);
+}
+
+// ── rich state, confidence and abstention ──────────────────────────────────
+section('advisor confidence');
+{
+  // summarizeState, readConfidence and CONFIDENCE_FLOOR are imported at the top.
+  // `sim` from the advisor block above is scoped there, so make one here.
+  const sim = new Sim();
+  sim.gold = 2000;
+
+  // A bare run: nothing built, nothing happened.
+  const bare = new Sim();
+  const bareState = summarizeState(bare);
+  eq('bare run reports full health', bareState.health, 1);
+  eq('bare run reports zero leaks', bareState.leaked, 0);
+  check('bare run says it has no towers', /no towers yet/.test(bareState.text));
+  check('bare state names the missing answers', /Nothing on the board does area damage/.test(bareState.text));
+
+  // Gold is reported relative to what a tower costs, not as a bare number.
+  const rich = new Sim({ gold: 3000 });
+  const richState = summarizeState(rich);
+  check('gold is expressed in towers', /enough for about \d+ more/.test(richState.text),
+    richState.text.slice(0, 200));
+  eq('cheap tower is arrow', richState.affordable, 60);
+
+  // Tower traits have to be readable in words, and gaps named.
+  // (1,2) is on the path, so builds there silently fail. Pick cells the grid
+  // actually allows: the tests must not pass by accident.
+  const splashy = new Sim({ gold: 5000 });
+  check('cannon placed', Boolean(splashy.build('cannon', 1, 1)));
+  check('frost placed', Boolean(splashy.build('frost', 1, 3)));
+  // Trait order is not part of the contract, so assert membership, not string
+  // equality: a Set gives no ordering guarantee once items are added from a loop.
+  const traits = summarizeState(splashy).traits;
+  check('cannon contributes area damage', /area damage/.test(traits), traits);
+  check('frost contributes slow', /slow/.test(traits), traits);
+  check('a board with both never claims single target only', !/single target only/.test(traits), traits);
+  check('a board with slow omits the slow warning', !/Nothing on the board slows/.test(summarizeState(splashy).text));
+  check('a board with area damage omits the armour warning', !/Nothing on the board does area damage/.test(summarizeState(splashy).text));
+
+  const single = new Sim({ gold: 5000 });
+  check('arrow placed', Boolean(single.build('arrow', 1, 1)));
+  check('second arrow placed', Boolean(single.build('arrow', 1, 3)));
+  check('an arrow-only board says single target only', /single target only/.test(summarizeState(single).traits),
+    summarizeState(single).traits);
+  check('single-target board warns about no slow', /Nothing on the board slows/.test(summarizeState(single).text));
+  check('single-target board warns about no area damage', /Nothing on the board does area damage/.test(summarizeState(single).text));
+
+  // A run that has taken damage must not read as pristine.
+  const hurt = new Sim({ gold: 100 });
+  hurt.wave = 5;
+  hurt.leaked = 9;
+  hurt.lives = 4;
+  const hurtState = summarizeState(hurt);
+  check('damaged core is not 100%', hurtState.health < 0.3, String(hurtState.health));
+  check('damaged core is called dangerous', /real trouble/.test(hurtState.text));
+  check('damaged core is not called untouched', !/never lost a life/.test(hurtState.text));
+
+  // Health must not drift as leaks accumulate: startLives is the denominator.
+  const leaky = new Sim();
+  leaky.leaked = 5;
+  leaky.lives = leaky.startLives - 5;
+  eq('health tracks leaks against the starting value', summarizeState(leaky).health, 0.75);
+
+  // readConfidence: confidence, margin and the full spread.
+  const conf = readConfidence({
+    answers: {
+      difficulty: { type: 'choice', choice: 'balanced', confidence: 0.27, probabilities: { balanced: 0.51, aggressive: 0.45, gentle: 0.04 } },
+      gap: { type: 'noul', noul: 0.8 },
+    },
+  });
+  eq('confidence is read', conf.difficulty.confidence, 0.27);
+  eq('choice is read', conf.difficulty.choice, 'balanced');
+  eq('margin is the gap to the runner-up', conf.difficulty.margin, 0.06);
+  eq('noul has no probabilities', conf.gap.probabilities && Object.keys(conf.gap.probabilities).length, 0);
+
+  // A lone option has nothing to beat, so the margin is the whole weight.
+  const solo = readConfidence({ answers: { focus: { choice: 'grunt', confidence: 0.7, probabilities: { grunt: 1 } } } });
+  eq('a single option wins outright', solo.focus.margin, 1);
+
+  // Nonsense confidence must not leak through as a negative or NaN.
+  const junk = readConfidence({ answers: { focus: { choice: 'grunt', confidence: 5, probabilities: { grunt: -2 } } } });
+  eq('confidence is clamped to 1', junk.focus.confidence, 1);
+  eq('negative probability still yields a usable margin', junk.focus.margin, 0);
+
+  eq('confidence floor is sane', CONFIDENCE_FLOOR > 0 && CONFIDENCE_FLOOR < 1, true);
+
+  // The model's own words about the board come back as a hint.
+  const meta = {};
+  planFromAnswer({
+    answers: {
+      difficulty: { type: 'choice', choice: 'balanced' },
+      focus: { type: 'choice', choice: 'shielded' },
+      gap: { type: 'choice', choice: 'no slow tower on the board' },
+    },
+  }, sim, 3, meta);
+  check('a named enemy becomes a build hint', typeof meta.hint === 'string' && meta.hint.length > 0, String(meta.hint));
+  eq('the gap answer is carried through', meta.gap, 'no slow tower on the board');
+
+  // Difficulty must scale the wave: aggressive is bigger than gentle.
+  const gentlePlan = planFromAnswer({ answers: { difficulty: { choice: 'gentle' }, focus: { type: 'noul', noul: 0.1 } } }, sim, 5);
+  const hardPlan = planFromAnswer({ answers: { difficulty: { choice: 'aggressive' }, focus: { type: 'noul', noul: 0.1 } } }, sim, 5);
+  const total = (p) => p.groups.reduce((n, g) => n + g.count, 0);
+  check('aggressive sends more than gentle', total(hardPlan) > total(gentlePlan),
+    `gentle=${total(gentlePlan)} hard=${total(hardPlan)}`);
+
+  // A runaway gap answer must be cut, not shown whole.
+  const longMeta = {};
+  planFromAnswer({ answers: { gap: { type: 'choice', choice: 'x'.repeat(400) } } }, sim, 3, longMeta);
+  check('a huge gap answer is truncated', longMeta.gap.length <= 160, String(longMeta.gap?.length));
+
+  // A noul gap is a 0..1 reading, which means nothing to a human untranslated.
+  const loudMeta = {};
+  planFromAnswer({ answers: { gap: { type: 'noul', noul: 0.82 } } }, sim, 3, loudMeta);
+  eq('a high need is reported as a number', loudMeta.need, 0.82);
+  check('a high need becomes advice', typeof loudMeta.gap === 'string' && loudMeta.gap.length > 0, String(loudMeta.gap));
+  check('advice is in words, not a bare figure', !/^[\d.]+$/.test(loudMeta.gap), String(loudMeta.gap));
+
+  const quietMeta = {};
+  planFromAnswer({ answers: { gap: { type: 'noul', noul: 0.1 } } }, sim, 3, quietMeta);
+  eq('a low need is recorded', quietMeta.need, 0.1);
+  check('a low need makes no suggestion', quietMeta.gap === undefined, String(quietMeta.gap));
+
+  // isUnreliable: two independent tests, either one is enough to distrust.
+  const { isUnreliable, MARGIN_FLOOR } = advisorExports;
+  check('low confidence is distrusted', isUnreliable({ confidence: 0.1, margin: 0.5 }) === true);
+  check('a confident clear winner is trusted', isUnreliable({ confidence: 0.9, margin: 0.5 }) === false);
+  check('a coin toss is distrusted despite high confidence',
+    isUnreliable({ confidence: 0.85, margin: 0.01 }) === true, `margin floor ${MARGIN_FLOOR}`);
+  check('a missing margin does not trigger a distrust',
+    isUnreliable({ confidence: 0.85, margin: null }) === false);
+  check('nothing to judge is not treated as a failure', isUnreliable(null) === false);
 }
 
 // ── report ─────────────────────────────────────────────────────────────────

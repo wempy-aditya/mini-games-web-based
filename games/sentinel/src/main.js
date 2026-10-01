@@ -38,6 +38,7 @@ const el = {
   btnMenu: $('btnMenu'),
   waveBanner: $('waveBanner'),
   advisorNote: $('advisorNote'),
+  advisorAdvice: $('advisorAdvice'),
   mapPick: $('mapPick'),
   menuStats: $('menuStats'),
 };
@@ -366,14 +367,51 @@ async function nextWaveAdvised() {
   banner(`GELOMBANG ${wave}`, 1500);
 
   if (res.source === 'local') {
-    advisorNote(res.error ? `Model gagal: ${res.error}. Pakai rencana lokal.` : 'Rencana lokal (model nonaktif).', true);
+    // Three different reasons to fall back, and the player deserves to know
+    // which: the model is off, the model failed, or the model declined to
+    // decide. "Local plan" alone reads like a bug.
+    if (res.reason === 'low-confidence') {
+      const entries = Object.entries(res.meta?.confidence || {})
+        .filter(([k]) => k !== 'gap')
+        .sort((a, b) => a[1].confidence - b[1].confidence);
+      const [label, worst] = entries[0] || ['salah satu keputusan', { confidence: 0 }];
+      advisorNote(`Jev ragu soal "${label}" (keyakinan ${Math.round(worst.confidence * 100)}%), jadi pakai rencana lokal.`, true);
+    } else if (res.error) {
+      advisorNote(`Model gagal: ${res.error}. Pakai rencana lokal.`, true);
+    } else {
+      advisorNote('Rencana lokal (model nonaktif).', true);
+    }
   } else {
-    const d = res.plan.groups[res.plan.groups.length - 1];
-    advisorNote(`Disusun ${res.source === 'jev' ? 'Jev' : 'model'} dalam ${res.ms}ms${d ? ` — penekanan ${d.type}` : ''}`);
+    const name = res.source === 'jev' ? 'Jev' : 'model';
+    const bits = [`Disusun ${name} dalam ${res.ms}ms`];
+    if (res.meta?.hint) bits.push(res.meta.hint);
+    const conf = res.meta?.confidence?.difficulty;
+    if (conf && Number.isFinite(conf.confidence)) {
+      bits.push(`keyakinan ${Math.round(conf.confidence * 100)}%`);
+    }
+    advisorNote(bits.join(' — '));
   }
 
   save();
   paintHud();
+  // The build advice outlives the wave banner: it is the part the player acts
+  // on between waves, so it gets its own line rather than a 3 second flash.
+  advisorAdvice(res.meta?.gap);
+}
+
+/**
+ * Show the model's read of what the board is missing, if it had one. Shown
+ * regardless of whether the wave came from the model or the local fallback: a
+ * low-confidence answer still carries a useful observation, and the point of
+ * abstaining is to still offer something.
+ */
+function advisorAdvice(text) {
+  if (!text) {
+    el.advisorAdvice.hidden = true;
+    return;
+  }
+  el.advisorAdvice.textContent = `Saran: ${text}`;
+  el.advisorAdvice.hidden = false;
 }
 
 // ── game loop ──────────────────────────────────────────────────────────────
@@ -550,6 +588,10 @@ function restart(pathKey) {
   renderer.hover = null;
   clearSave();
   paintHud();
+  // Advice from the previous run would be advice about a board that no longer
+  // exists, so it goes with it.
+  advisorAdvice(null);
+  el.advisorNote.hidden = true;
   banner('PERTARUNGAN BARU', 1200);
 }
 

@@ -209,6 +209,32 @@ button.icon.live { border-color: var(--good); color: var(--good); }
 
 #advisorNote.local { border-color: rgba(135, 148, 168, 0.4); color: var(--dim); }
 
+/* The build advice is longer than the other overlays and has to be read, not
+   glimpsed, so it wraps and pins to the bottom-left instead of centring. */
+#advisorAdvice {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  max-width: min(360px, calc(100% - 20px));
+  padding: 7px 12px;
+  border-radius: 8px;
+  background: rgba(15, 23, 36, 0.9);
+  border: 1px solid rgba(240, 180, 41, 0.45);
+  color: var(--gold);
+  font: 500 11px/1.5 var(--font);
+  pointer-events: none;
+  white-space: normal;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  #advisorAdvice { animation: adviceIn 0.3s ease-out; }
+}
+
+@keyframes adviceIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 @keyframes pop {
   from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
   to { opacity: 1; transform: translateX(-50%) translateY(0); }

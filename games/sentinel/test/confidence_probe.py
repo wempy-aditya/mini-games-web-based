@@ -1,14 +1,17 @@
-"""Probe: does a richer state description raise Jev's confidence?
+"""Measure the effect of the richer state description on Jev's confidence.
 
-Run against the user's own endpoint through the dev-server relay.
-Usage: python3 test/confidence_probe.py <api-key>
+Sends the exact state the game now produces (built with the real Sim) and
+compares it against the old thin one, plus two situations where the right
+answer is knowable in advance.
+
+Usage: python3 test/confidence_probe.py <api-key> [--proxy http://127.0.0.1:8123]
 """
 
 import json
+import subprocess
 import sys
 import urllib.request
 
-PROXY = "http://127.0.0.1:8123/api/proxy"
 UPSTREAM = "https://9router.wempyaw.com/v1/systemone"
 MODEL = "oc/jev-1.13-free"
 
@@ -33,74 +36,143 @@ QUESTIONS = {
             "swift": "Very fast enemies, punishes towers with short range",
         },
     },
+    "gap": {
+        "type": "noul",
+        "instructions": "How badly does this board need a fix before the next wave: "
+        "a slow tower, area damage, more gold, a wider range, or nothing at all? "
+        "Answer 0 if the board is fine, 1 if it clearly is not.",
+    },
 }
 
-STATES = {
-    "thin (what the game sends now)": (
-        "Wave 3 of a tower defence run. Lives remaining: 20. Gold available: 3000. "
-        "Towers on the map: 5x arrow. Enemies killed so far: 8. "
-        "Enemies that reached the core: 0."
-    ),
-    "rich (explicit read of the board)": (
+# The state text the game produced before this change, kept for comparison.
+OLD_THIN = (
+    "Wave 3 of a tower defence run. Lives remaining: 20. Gold available: 3000. "
+    "Towers on the map: 5x arrow. Enemies killed so far: 8. "
+    "Enemies that reached the core: 0."
+)
+
+# Hand-written checks where the right answer is not a matter of taste.
+SCENARIOS = [
+    ("hurting: should pick gentle", (
+        "Tower defence run. Wave 10 is about to start.\n"
+        "Core health: 20% (4 of 20 lives, 16 enemies have already reached the core).\n"
+        "The player is in real trouble and one bad wave could end the run.\n"
+        "Gold: 180, enough for about 3 more of the cheapest tower. "
+        "That is not enough for even one tower, so they cannot react before the wave hits.\n"
+        "Board: 3x frost (single target only, slow) (slow).\n"
+        "Enemies destroyed so far: 61."
+    )),
+    ("safe and rich: should pick aggressive", (
         "Tower defence run. Wave 3 is about to start.\n"
-        "Core status: the core has taken ZERO damage. The player has never lost a life.\n"
-        "Gold: 3000 unspent. The player is sitting on far more gold than any tower "
-        "costs, so they are saving up or ignoring the shop.\n"
-        "Board: 5 Arrow towers. An Arrow tower does single-target damage only: it "
-        "picks one enemy and shoots it. It cannot splash and it cannot slow.\n"
-        "There is no area damage and no slow on the board at all.\n"
-        "The player has lost nothing so far, which usually means the previous waves "
-        "were too easy for what they built.\n"
-        "Given a perfect core, a large untouched gold pile, and a board with no "
-        "answer to fast or armoured enemies, what should this wave be?"
-    ),
-    "in trouble (should pick gentle)": (
-        "Tower defence run. Wave 9 is about to start.\n"
-        "Core status: the core has taken heavy damage. Lives have dropped from 20 "
-        "to 4 this run and 31 enemies have already reached the core.\n"
-        "Gold: 180. That is barely enough for one Arrow tower, so the player cannot "
-        "buy anything meaningful before the wave hits.\n"
-        "Board: 3 Frost towers, which slow enemies but deal almost no damage.\n"
-        "The player is one bad wave from losing. What should this wave be?"
-    ),
-}
+        "Core health: 100% (20 of 20 lives, 0 enemies have already reached it).\n"
+        "The player has never lost a life, which usually means the waves so far were too easy "
+        "for what they built.\n"
+        "Gold: 3000, enough for about 60 more of the cheapest tower. "
+        "That is a lot of unspent gold, so the player is saving or ignoring the shop.\n"
+        "Board: 5x arrow (single target only).\n"
+        "Nothing on the board slows enemies down, so anything fast will get through much more easily.\n"
+        "Nothing on the board does area damage, so armoured groups will not be punished.\n"
+        "Enemies destroyed so far: 8."
+    )),
+]
 
 
-def ask(key: str, state: str) -> dict:
+def ask(proxy: str, key: str, state: str) -> dict:
     body = {
         "url": UPSTREAM,
         "apiKey": key,
         "body": {"model": MODEL, "state": state, "questions": QUESTIONS},
     }
     req = urllib.request.Request(
-        PROXY,
+        f"{proxy}/api/proxy",
         data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json", "Origin": "http://127.0.0.1:8123"},
+        headers={"Content-Type": "application/json", "Origin": proxy},
     )
-    with urllib.request.urlopen(req, timeout=40) as resp:
-        # The relay decodes the upstream body, so `data` is already an object.
-        payload = json.loads(resp.read())
-        return payload.get("data") or {}
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        return (json.loads(resp.read()).get("data") or {})
+
+
+def report(label: str, out: dict) -> None:
+    print(f"\n=== {label}")
+    for name, ans in out.get("answers", {}).items():
+        probs = ans.get("probabilities") or {}
+        conf = ans.get("confidence")
+        if probs:
+            ranked = sorted(probs.items(), key=lambda kv: -kv[1])
+            margin = ranked[0][1] - (ranked[1][1] if len(ranked) > 1 else 0)
+            print(f"  {name:<11} chose={ans.get('choice', '-'):<10} "
+                  f"confidence={conf!s:<6} margin={margin:.2f}")
+            print(f"              {dict(ranked)}")
+        else:
+            print(f"  {name:<11} {ans.get('noul')}  confidence={conf!s:<6} "
+                  f"({ans.get('type')})")
+    usage = out.get("usage", {})
+    print(f"  tokens: in={usage.get('input_tokens')} out={usage.get('output_tokens')}")
+
+
+def live_states() -> list[tuple[str, str]]:
+    """Ask the real game for its state text, so the probe cannot drift from it."""
+    script = r"""
+import { Sim } from '/home/wempya/projects/mini-games/games/sentinel/src/sim.js';
+import { summarizeState } from '/home/wempya/projects/mini-games/games/sentinel/src/advisor.js';
+
+const cruise = new Sim();
+cruise.gold = 3000;
+cruise.wave = 2;
+cruise.kills = 8;
+for (const c of [[1,1],[1,3],[3,1],[4,2],[2,4]]) cruise.build('arrow', c[0], c[1]);
+
+const rich = new Sim({ gold: 3000 });
+rich.wave = 2;
+rich.kills = 8;
+rich.build('cannon', 1, 1);
+rich.build('tesla', 1, 3);
+
+const hurt = new Sim({ gold: 180 });
+hurt.wave = 9;
+hurt.kills = 61;
+hurt.leaked = 16;
+hurt.lives = 4;
+hurt.build('frost', 1, 1);
+hurt.build('frost', 3, 1);
+hurt.build('frost', 4, 2);
+
+const blank = new Sim();
+blank.wave = 1;
+
+console.log(JSON.stringify({
+  cruise: summarizeState(cruise).text,
+  rich: summarizeState(rich).text,
+  hurt: summarizeState(hurt).text,
+  blank: summarizeState(blank).text,
+}));
+"""
+    with open("/tmp/probe-state.mjs", "w", encoding="utf-8") as fh:
+        fh.write(script)
+    out = subprocess.run(
+        ["node", "/tmp/probe-state.mjs"],
+        capture_output=True, text=True, timeout=60, check=True,
+    )
+    data = json.loads(out.stdout)
+    return [
+        ("OLD thin (before the change)", OLD_THIN),
+        ("NEW cruise: real Sim, 5 arrow", data["cruise"]),
+        ("NEW blank: real Sim, nothing built", data["blank"]),
+    ]
 
 
 def main() -> None:
-    key = sys.argv[1] if len(sys.argv) > 1 else ""
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    key = args[0] if args else ""
     if not key:
         raise SystemExit("usage: python3 test/confidence_probe.py <api-key>")
+    proxy = "http://127.0.0.1:8123"
+    for i, a in enumerate(sys.argv):
+        if a == "--proxy" and i + 1 < len(sys.argv):
+            proxy = sys.argv[i + 1]
 
-    for label, state in STATES.items():
-        out = ask(key, state)
-        answers = out.get("answers", {})
-        print(f"\n=== {label}")
-        for name, ans in answers.items():
-            probs = ans.get("probabilities", {})
-            top = max(probs.items(), key=lambda kv: kv[1]) if probs else ("-", 0)
-            print(f"  {name:<11} chose={ans.get('choice','-'):<10} "
-                  f"confidence={ans.get('confidence')!s:<6} "
-                  f"spread={top[1] - min(probs.values()) if probs else 0:.2f}")
-            print(f"              {probs}")
-        usage = out.get("usage", {})
-        print(f"  tokens: in={usage.get('input_tokens')} out={usage.get('output_tokens')}")
+    for label, state in live_states() + SCENARIOS:
+        report(label, ask(proxy, key, state))
 
 
 if __name__ == "__main__":

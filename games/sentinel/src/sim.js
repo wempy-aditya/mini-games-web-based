@@ -24,6 +24,10 @@ export class Sim {
     this.path = buildPath(this.pathKey);
     this.gold = opts.gold ?? START_GOLD;
     this.lives = opts.lives ?? START_LIVES;
+    // Kept separately so "how much of the core is left" stays meaningful after
+    // leaks. Deriving it from lives + leaked would drift if a run is restored
+    // from a save or if lives are granted back.
+    this.startLives = this.lives;
     this.wave = 0;
     this.kills = 0;
     this.leaked = 0;
@@ -488,6 +492,7 @@ export class Sim {
       pathKey: this.pathKey,
       gold: this.gold,
       lives: this.lives,
+      startLives: this.startLives,
       wave: this.wave,
       kills: this.kills,
       leaked: this.leaked,
@@ -508,6 +513,9 @@ export class Sim {
       lives: data.lives,
     });
     sim.wave = data.wave || 0;
+    // A save written before startLives existed falls back to current lives,
+    // which reports a damaged core as untouched. Not fatal, only less honest.
+    sim.startLives = data.startLives || sim.lives;
     sim.kills = data.kills || 0;
     sim.leaked = data.leaked || 0;
     sim.goldEarned = data.goldEarned || 0;
