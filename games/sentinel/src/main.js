@@ -424,6 +424,7 @@ function openAi() {
   $('aiKey').value = aiDraft.apiKey;
   $('aiTemp').value = String(aiDraft.temperature);
   $('aiTimeout').value = String(aiDraft.timeoutMs);
+  if ($('aiTransport')) $('aiTransport').value = aiDraft.transport || 'auto';
   $('aiKey').type = 'password';
   $('aiTestOut').textContent = '';
   $('aiTestOut').className = 'testout';
@@ -449,6 +450,7 @@ function readAiDraft() {
     temperature: Number($('aiTemp').value) || 0.7,
     maxTokens: 400,
     timeoutMs: Number($('aiTimeout').value) || 15000,
+    transport: $('aiTransport') ? $('aiTransport').value : 'auto',
   };
 }
 

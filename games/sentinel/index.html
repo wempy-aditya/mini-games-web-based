@@ -121,6 +121,16 @@
       </div>
 
       <div class="row">
+        <label for="aiTransport">Cara koneksi</label>
+        <select id="aiTransport">
+          <option value="auto">Otomatis (disarankan)</option>
+          <option value="direct">Langsung ke API</option>
+          <option value="proxy">Lewat relay server</option>
+        </select>
+      </div>
+      <p class="note">Otomatis mencoba langsung, lalu memakai relay dev server kalau peramban menolak koneksi. Relay dibutuhkan untuk API yang memakai CORS, karena peramban mengirim pemeriksaan awal tanpa header otorisasi sehingga server membalas 401 tanpa header CORS.</p>
+
+      <div class="row">
         <label for="aiTimeout">Batas waktu (ms)</label>
         <input type="number" id="aiTimeout" min="2000" max="120000" step="500" value="15000">
       </div>

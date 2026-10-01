@@ -15,6 +15,8 @@ import json
 import mimetypes
 import os
 import sys
+import urllib.error
+import urllib.request
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -24,6 +26,67 @@ GAMES_DIR = ROOT / "games"
 
 mimetypes.add_type("application/javascript", ".js")
 mimetypes.add_type("text/css", ".css")
+
+PROXY_PATH = "/api/proxy"
+PROXY_TIMEOUT = 90
+
+
+def forward(request: dict, origin: str) -> dict:
+    """Send one decision-model request upstream and return a tagged result.
+
+    The API key travels in the request body rather than a header, so it never
+    crosses the network in a way a browser page could observe, and so this
+    process has nothing to log.
+    """
+    target = str(request.get("url") or "").strip()
+    if not target:
+        return {"ok": False, "error": "missing url"}
+    if not target.startswith(("http://", "https://")):
+        return {"ok": False, "error": "url must be http or https"}
+
+    try:
+        payload = json.dumps(request.get("body") or {}).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        return {"ok": False, "error": f"body is not JSON-serialisable: {exc}"}
+
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        # Cloudflare in front of several decision-model APIs rejects the default
+        # Python-urllib agent with "Error 1010: browser signature banned", while
+        # an ordinary browser token passes. Sending a truthful one keeps the
+        # relay working without pretending to be any particular browser.
+        "User-Agent": "mini-games-dev-server/1.0 (+https://github.com/wempy-aditya/mini-games-web-based)",
+        # The upstream API often refuses a preflight that carries no key. Sending
+        # Origin plus the headers it would have allowed makes the upstream reply
+        # with its CORS headers even though we are not a browser.
+        "Origin": origin,
+        "Access-Control-Request-Method": "POST",
+    }
+    key = str(request.get("apiKey") or "").strip()
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+
+    req = urllib.request.Request(target, data=payload, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=PROXY_TIMEOUT) as resp:
+            raw = resp.read()
+            status = resp.status
+    except urllib.error.HTTPError as exc:
+        raw = exc.read()
+        status = exc.code
+    except urllib.error.URLError as exc:
+        return {"ok": False, "error": f"upstream unreachable: {exc.reason}"}
+    except (OSError, TimeoutError) as exc:
+        return {"ok": False, "error": f"upstream unreachable: {exc}"}
+
+    text = raw.decode("utf-8", errors="replace")
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return {"ok": False, "status": status, "error": "upstream returned non-JSON", "raw": text[:2000]}
+
+    return {"ok": 200 <= status < 300, "status": status, "data": data}
 
 
 def scan_games() -> list[dict]:
@@ -68,6 +131,40 @@ class GameCatalogHandler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store, must-revalidate")
         super().end_headers()
 
+    def _local_origin(self) -> str:
+        host = self.headers.get("Host")
+        if not host:
+            # server_address is typed as a union because some socket families
+            # return a string here; the tuple form is the one this server uses.
+            addr = self.server.server_address
+            host = f"{addr[0]}:{addr[1]}" if isinstance(addr, tuple) else str(addr)
+        return f"http://{host}"
+
+    def _origin_allowed(self) -> bool:
+        """Reject cross-site callers so this cannot be used as an open relay.
+
+        A request with no Origin header is not from a browser page (curl, the
+        test harness), and is allowed. A browser request must come from this
+        server's own origin, which is what keeps a page on another site from
+        borrowing the proxy.
+        """
+        origin = self.headers.get("Origin")
+        return origin is None or origin == self._local_origin()
+
+    def do_OPTIONS(self) -> None:  # noqa: N802
+        # Same-origin callers never trigger a preflight, but answering one
+        # correctly costs nothing and makes the proxy usable from a page served
+        # by something else on localhost.
+        if self.path.split("?")[0] == PROXY_PATH:
+            self.send_response(204)
+            self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.send_header("Access-Control-Max-Age", "600")
+            self.send_header("Access-Control-Allow-Origin", self.headers.get("Origin") or "*")
+            self.end_headers()
+            return
+        self.send_error(405, "Method Not Allowed")
+
     def do_GET(self) -> None:  # noqa: N802
         if self.path.split("?")[0] == "/api/games":
             body = json.dumps(scan_games(), indent=2).encode("utf-8")
@@ -78,6 +175,55 @@ class GameCatalogHandler(SimpleHTTPRequestHandler):
             self.wfile.write(body)
             return
         super().do_GET()
+
+    def do_POST(self) -> None:  # noqa: N802
+        if self.path.split("?")[0] != "/api/proxy":
+            self.send_error(404, "Not Found")
+            return
+        self._handle_proxy()
+
+    def _handle_proxy(self) -> None:
+        """Forward one request to a decision-model API and relay the answer.
+
+        This exists for a specific CORS limitation, not as a general feature.
+        A browser preflight is sent WITHOUT the Authorization header, because
+        that is what a preflight is. Some APIs gate the preflight itself behind
+        authentication and answer 401 with no CORS headers, so the browser
+        rejects the call before the real request is ever made. The headers are
+        already correct on those APIs; only the handshake is unreachable.
+
+        Routing through here makes the browser call same-origin, so there is no
+        preflight at all, and this process adds the header.
+        """
+        if not self._origin_allowed():
+            self._json(403, {"ok": False, "error": "cross-origin request refused"})
+            return
+
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            self._json(400, {"ok": False, "error": "bad Content-Length"})
+            return
+        if length <= 0 or length > 2_000_000:
+            self._json(400, {"ok": False, "error": "missing or oversized body"})
+            return
+
+        try:
+            request = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            self._json(400, {"ok": False, "error": f"bad JSON: {exc}"})
+            return
+
+        result = forward(request, self._local_origin())
+        self._json(200, result)
+
+    def _json(self, code: int, payload: dict) -> None:
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002
         sys.stderr.write(f"[{self.log_date_time_string()}] {format % args}\n")
